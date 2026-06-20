@@ -47,6 +47,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/chats/{contact}/lock/acquire', [ChatLockController::class, 'acquire'])->name('chats.lock.acquire');
     Route::post('/chats/{contact}/lock/release', [ChatLockController::class, 'release'])->name('chats.lock.release');
 
+    // Human handoff actions (agent takes over or resolves chat)
+    Route::post('/chats/{contact}/handoff/takeover', [ChatApiController::class, 'takeoverHandoff'])->name('chats.handoff.takeover');
+    Route::post('/chats/{contact}/handoff/resolve', [ChatApiController::class, 'resolveHandoff'])->name('chats.handoff.resolve');
+    Route::post('/chats/{contact}/handoff/reset', [ChatApiController::class, 'resetHandoff'])->name('chats.handoff.reset');
+
     // Logs page
     Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
 });
@@ -60,6 +65,28 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Super Admin Routes
+|--------------------------------------------------------------------------
+*/
+use App\Http\Controllers\SuperAdminAuthController;
+use App\Http\Controllers\AdminController;
+
+Route::middleware('guest')->group(function () {
+    Route::get('/superadmin/login', [SuperAdminAuthController::class, 'showLogin'])->name('superadmin.login');
+    Route::post('/superadmin/login', [SuperAdminAuthController::class, 'login']);
+});
+
+Route::middleware('superadmin')->prefix('superadmin')->name('superadmin.')->group(function () {
+    // Redirect root to manage-admins (no dashboard)
+    Route::get('/', function () {
+        return redirect()->route('superadmin.admins.index');
+    })->name('home');
+
+    Route::resource('admins', AdminController::class);
 });
 
 require __DIR__.'/auth.php';

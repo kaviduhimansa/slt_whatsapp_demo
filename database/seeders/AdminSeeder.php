@@ -32,10 +32,24 @@ class AdminSeeder extends Seeder
                     'name' => $admin['name'],
                     'password' => Hash::make($defaultPassword),
                     'is_admin' => true,
+                    'role' => 'admin',
                     'email_verified_at' => now(),
                     'remember_token' => Str::random(10),
                 ]
             );
         }
+
+        // Create a Super Admin
+        User::updateOrCreate(
+            ['email' => 'superadmin@slt.lk'],
+            [
+                'name' => 'Super Admin',
+                'password' => Hash::make($defaultPassword),
+                'is_admin' => true,
+                'role' => 'superadmin',
+                'email_verified_at' => now(),
+                'remember_token' => Str::random(10),
+            ]
+        );
     }
 }

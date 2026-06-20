@@ -13,6 +13,7 @@ class SltWhatsappClient
     private string $password;
     private string $phoneNumberId;
     private ?string $bearerToken;
+    private bool $verifySsl;
 
     public function __construct()
     {
@@ -22,6 +23,7 @@ class SltWhatsappClient
         $this->password = $cfg['password'];
         $this->phoneNumberId = $cfg['phone_number_id'];
         $this->bearerToken = $cfg['bearer_token'] ?? null;
+        $this->verifySsl = (bool) ($cfg['verify_ssl'] ?? true);
     }
 
     public function phoneNumberId(): string
@@ -45,14 +47,14 @@ class SltWhatsappClient
         $url = "{$this->base}/login.php";
 
         $start = microtime(true);
-        $resp = Http::timeout(15)->asJson()->post($url, [
+        $resp = $this->http(15)->asJson()->post($url, [
             'username' => $this->username,
             'password' => $this->password,
         ]);
 
         $duration = (int) round((microtime(true) - $start) * 1000);
 
-        $data = $resp->json();
+        $data = $this->jsonResponse($resp, '/login.php');
         $token = $data['token'] ?? $data['access_token'] ?? $data['data']['token'] ?? null;
 
         ApiLog::create([
@@ -66,7 +68,7 @@ class SltWhatsappClient
         ]);
 
         if (!$resp->successful() || !$token) {
-            throw new \RuntimeException("SLT login failed (status {$resp->status()}).");
+            throw new \RuntimeException($this->responseFailureMessage('/login.php', $resp->status(), $data, 'SLT login failed'));
         }
 
         return $token;
@@ -176,7 +178,7 @@ class SltWhatsappClient
         $url = "{$this->base}{$endpoint}";
 
         $start = microtime(true);
-        $resp = Http::timeout(20)
+        $resp = $this->http(20)
             ->withToken($token)
             ->asJson()
             ->post($url, $payload);
@@ -187,7 +189,7 @@ class SltWhatsappClient
             $token = $this->getToken();
 
             $start = microtime(true);
-            $resp = Http::timeout(20)
+            $resp = $this->http(20)
                 ->withToken($token)
                 ->asJson()
                 ->post($url, $payload);
@@ -202,14 +204,14 @@ class SltWhatsappClient
             'status' => $resp->status(),
             'duration_ms' => $duration,
             'request' => $this->safeRequest($payload),
-            'response' => $this->safeResponse($resp->json()),
+            'response' => $this->safeResponse($this->jsonResponse($resp, $endpoint)),
         ]);
 
         if (!$resp->successful()) {
-            throw new \RuntimeException("SLT API failed {$endpoint} (status {$resp->status()}).");
+            throw new \RuntimeException($this->responseFailureMessage($endpoint, $resp->status(), $this->jsonResponse($resp, $endpoint)));
         }
 
-        return $resp->json() ?? [];
+        return $this->jsonResponse($resp, $endpoint);
     }
 
     private function authedGet(string $endpoint, array $query = []): array
@@ -218,7 +220,7 @@ class SltWhatsappClient
         $url = "{$this->base}{$endpoint}";
 
         $start = microtime(true);
-        $resp = Http::timeout(20)
+        $resp = $this->http(20)
             ->withToken($token)
             ->acceptJson()
             ->get($url, $query);
@@ -229,7 +231,7 @@ class SltWhatsappClient
             $token = $this->getToken();
 
             $start = microtime(true);
-            $resp = Http::timeout(20)
+            $resp = $this->http(20)
                 ->withToken($token)
                 ->acceptJson()
                 ->get($url, $query);
@@ -244,20 +246,61 @@ class SltWhatsappClient
             'status' => $resp->status(),
             'duration_ms' => $duration,
             'request' => $this->safeRequest($query),
-            'response' => $this->safeResponse($resp->json()),
+            'response' => $this->safeResponse($this->jsonResponse($resp, $endpoint)),
         ]);
 
         if (!$resp->successful()) {
-            throw new \RuntimeException("SLT API failed {$endpoint} (status {$resp->status()}).");
+            throw new \RuntimeException($this->responseFailureMessage($endpoint, $resp->status(), $this->jsonResponse($resp, $endpoint)));
         }
 
-        return $resp->json() ?? [];
+        return $this->jsonResponse($resp, $endpoint);
     }
 
     private function safeRequest(array $payload): array
     {
-        // Don’t log anything sensitive if you add more fields later
+        // Do not log anything sensitive if you add more fields later.
         return $payload;
+    }
+
+    private function http(int $timeout)
+    {
+        $pending = Http::timeout($timeout);
+
+        return $this->verifySsl ? $pending : $pending->withoutVerifying();
+    }
+
+    private function jsonResponse($resp, string $endpoint): array
+    {
+        $data = $resp->json();
+
+        if (is_array($data)) {
+            return $data;
+        }
+
+        $body = trim((string) $resp->body());
+        if ($body === '') {
+            return [];
+        }
+
+        if (!$resp->successful()) {
+            return ['_raw_body_preview' => substr($body, 0, 500)];
+        }
+
+        throw new \RuntimeException("Invalid JSON returned by SLT API {$endpoint} (status {$resp->status()}).");
+    }
+
+    private function responseFailureMessage(string $endpoint, int $status, array $data, string $prefix = 'SLT API failed'): string
+    {
+        $message = $data['message']
+            ?? $data['error']
+            ?? $data['status']['message']
+            ?? null;
+
+        $suffix = is_string($message) && trim($message) !== ''
+            ? ': ' . trim($message)
+            : '';
+
+        return "{$prefix} {$endpoint} (status {$status}){$suffix}.";
     }
 
     private function safeResponse($data)

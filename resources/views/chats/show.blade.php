@@ -1,3 +1,10 @@
+@php
+  $initialHumanHandoffChatCount = $contacts->filter(fn ($chatContact) => (bool) $chatContact->is_bot_paused)->count();
+  $initialHumanHandoffUnreadMessageCount = $contacts->sum(
+      fn ($chatContact) => (bool) $chatContact->is_bot_paused ? (int) $chatContact->unread_count : 0
+  );
+@endphp
+
 <x-app-layout>
   <div class="max-w-7xl mx-auto p-3 sm:p-4 chat-shell-height min-h-0" x-data="chatApp({{ $contact->id }})" x-init="init()">
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full min-h-0">
@@ -5,17 +12,29 @@
       <div class="lg:col-span-1 rounded-2xl bg-white/5 border border-white/10 overflow-hidden flex flex-col h-full min-h-0"
            x-ref="sidebar"
            :class="sidebarOpen ? '' : 'hidden lg:block'">
-        <div class="p-4 border-b border-white/10 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-slt-accent"></span>
-            <span class="font-semibold text-white">Chats</span>
+        <div class="p-4 border-b border-white/10">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-slt-accent"></span>
+              <span class="font-semibold text-white">Chats</span>
+            </div>
+            <button class="lg:hidden px-3 py-2 rounded-xl border border-white/10 text-slt-muted hover:text-white" @click="sidebarOpen=false">Close</button>
           </div>
-          <button class="lg:hidden px-3 py-2 rounded-xl border border-white/10 text-slt-muted hover:text-white" @click="sidebarOpen=false">Close</button>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <div class="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+              <div class="text-lg font-semibold text-white" data-chat-stat="human_handoff_chat_count">{{ $initialHumanHandoffChatCount }}</div>
+              <div class="text-[11px] text-slt-muted">Human chats</div>
+            </div>
+            <div class="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+              <div class="text-lg font-semibold text-white" data-chat-stat="human_handoff_unread_message_count">{{ $initialHumanHandoffUnreadMessageCount }}</div>
+              <div class="text-[11px] text-slt-muted">Unread msgs</div>
+            </div>
+          </div>
         </div>
 
         <!-- Sync Inbox Button -->
         <div class="p-3 border-b border-white/10">
-          <form method="POST" action="{{ route('contacts.syncRecent') }}" class="w-full">
+          <form method="POST" action="{{ route('contacts.syncRecent') }}" class="w-full" @submit.prevent="manualSync()">
             @csrf
             <input type="hidden" name="limit" value="{{ (int) config('chat.sync_recent_limit', 40) }}" />
             <button type="submit"
@@ -42,8 +61,8 @@
       {{-- Chat panel --}}
       <div class="lg:col-span-2 rounded-2xl bg-white/5 border border-white/10 overflow-hidden flex flex-col h-full min-h-0">
         <!-- Chat Header -->
-        <div class="p-4 border-b border-white/10 flex flex-col gap-3 bg-white/5">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div class="p-4 border-b border-white/10 bg-white/5">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex min-w-0 items-center gap-3">
               <button class="lg:hidden px-3 py-2 rounded-xl border border-white/10 text-slt-muted hover:text-white" @click="sidebarOpen=true; $nextTick(() => setListHeight())">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,28 +124,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Lock Status Bar -->
-          <div x-show="lock.locked" x-transition class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-2 rounded-xl"
-               :class="lock.locked_by_me ? 'bg-slt-accent/20 border border-slt-accent/30' : 'bg-red-500/20 border border-red-500/30'">
-            <div class="flex items-start gap-2">
-              <svg class="w-5 h-5" :class="lock.locked_by_me ? 'text-slt-accent' : 'text-red-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              <span class="text-sm font-medium" :class="lock.locked_by_me ? 'text-slt-accent' : 'text-red-400'">
-                <template x-if="lock.locked_by_me">
-                  <span>You have locked this chat. Other admins cannot reply.</span>
-                </template>
-                <template x-if="!lock.locked_by_me">
-                  <span>Chat locked by <strong x-text="lock.locked_by"></strong>. You cannot reply.</span>
-                </template>
-              </span>
-            </div>
-            <button x-show="lock.locked_by_me" @click="releaseLock()"
-                    class="w-full sm:w-auto px-3 py-1 rounded-lg bg-white/10 text-slt-accent hover:bg-white/20 text-sm transition-all">
-              Release Lock
-            </button>
-          </div>
         </div>
 
         <!-- Messages Area -->
@@ -144,6 +141,18 @@
                      :class="m.direction === 'out'
                           ? 'bg-slt-primary text-white'
                           : 'bg-white/10 text-white'">
+                  <!-- Human Agent Request Badge -->
+                  <template x-if="isHumanHandoffMessage(m)">
+                    <div class="mb-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold animate-pulse"
+                         :class="handoff.status === 'assigned_to_agent'
+                           ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-300'
+                           : 'bg-amber-500/20 border border-amber-400/40 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.3)]'">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <span x-text="handoff.status === 'assigned_to_agent' ? 'Assigned to Human Agent' : 'Human Agent Requested'"></span>
+                    </div>
+                  </template>
                   <div class="whitespace-pre-wrap" x-text="m.body"></div>
                   <div class="flex items-center justify-end gap-1 mt-1">
                     <span class="text-[11px] opacity-70" x-text="formatTime(m.sent_at, m.time_hint)"></span>
@@ -244,11 +253,28 @@
         sending: false,
         draft: '',
         messages: [],
+        contactName: @js($contact->name ?? $contact->mobile),
+        handoff: @js([
+          'active' => (bool) $contact->is_bot_paused,
+          'status' => $contact->human_handoff_status ?: 'open',
+          'needs_human' => (bool) $contact->needs_human,
+          'bot_paused' => (bool) $contact->is_bot_paused,
+          'requested_at' => optional($contact->human_handoff_requested_at)->toIso8601String(),
+          'message_preview' => $contact->human_handoff_message_preview,
+          'message_key' => $contact->human_handoff_message_key,
+          'assigned_to' => $contact->humanHandoffAssignedTo?->name,
+          'assigned_to_id' => $contact->human_handoff_assigned_user_id,
+          'assigned_to_me' => $contact->human_handoff_assigned_user_id
+            ? (int) $contact->human_handoff_assigned_user_id === (int) auth()->id()
+            : false,
+          'unread_count' => (int) $contact->unread_count,
+        ]),
         lock: { locked: false, locked_by: null, locked_by_me: false },
         lockNotice: '',
         pollMs: 5000,
         listPollMs: 30000,
         syncContactsEveryMs: 30000,
+        humanHandoffBadgeTtlMs: 60 * 60 * 1000,
         syncContactsLimit: {{ (int) config('chat.sync_recent_limit', 40) }},
         lastContactSyncAt: 0,
         syncingContacts: false,
@@ -259,12 +285,14 @@
         timer: null,
         listTimer: null,
         lockTimer: null,
+        handoffBadgeTimers: [],
         resizeHandler: null,
         lastLockedBy: null,
         releasing: false,
         listLimit: {{ (int) $listLimit }},
         isFirstMessageLoad: true,
         forceMessageScrollToBottom: false,
+        lastInboundMessageKey: null,
 
         openSaveContact() {
           document.getElementById('saveContactModal').showModal();
@@ -279,10 +307,98 @@
           }));
         },
 
+        showNotice(message, key = 'sync-contacts-success') {
+          const text = String(message || '').trim();
+          if (!text) return;
+
+          window.dispatchEvent(new CustomEvent('app:notify', {
+            detail: { key, title: 'Sync Inbox', message: text }
+          }));
+        },
+
         clearError(key = 'general') {
           window.dispatchEvent(new CustomEvent('app:error:clear', {
             detail: { key }
           }));
+        },
+
+        latestInboundMessage(messages = []) {
+          for (let index = messages.length - 1; index >= 0; index -= 1) {
+            const message = messages[index];
+            if (message?.direction === 'in' && String(message?.body || '').trim() !== '') {
+              return message;
+            }
+          }
+          return null;
+        },
+
+        inboundMessageKey(message) {
+          if (!message) return null;
+          return String(message.uuid || `${message.id || ''}|${message.sent_at || ''}|${message.body || ''}`) || null;
+        },
+
+        isHumanHandoffMessage(message) {
+          if (!message || message.direction !== 'in') return false;
+          const key = this.inboundMessageKey(message);
+          return key === this.handoff.message_key;
+        },
+
+        maybeNotifyIncomingMessage(messages = []) {
+          const latestInbound = this.latestInboundMessage(messages);
+          const nextKey = this.inboundMessageKey(latestInbound);
+          const previousKey = this.lastInboundMessageKey;
+          this.lastInboundMessageKey = nextKey;
+
+          if (!nextKey || !previousKey || nextKey === previousKey) {
+            return;
+          }
+
+          if (document.visibilityState === 'visible' && document.hasFocus()) {
+            return;
+          }
+
+          window.chatListNotifications?.notifyIncomingMessage(
+            `chat:active:${contactId}:${nextKey}`,
+            this.contactName,
+            String(latestInbound?.body || 'New customer message')
+          );
+        },
+
+        clearNeedsHumanBadgeTimers() {
+          this.handoffBadgeTimers.forEach((timerId) => clearTimeout(timerId));
+          this.handoffBadgeTimers = [];
+        },
+
+        hideNeedsHumanBadge(card) {
+          card.querySelectorAll('.chat-needs-human-badge').forEach((badge) => {
+            if (badge.classList.contains('hidden')) return;
+            badge.classList.add('is-expiring');
+            setTimeout(() => {
+              badge.classList.add('hidden');
+              badge.classList.remove('is-expiring');
+            }, 220);
+          });
+        },
+
+        scheduleNeedsHumanBadgeExpiry() {
+          const listEl = this.$refs.chatList;
+          if (!listEl) return;
+
+          this.clearNeedsHumanBadgeTimers();
+          listEl.querySelectorAll('[data-needs-human="1"][data-handoff-requested-at]').forEach((card) => {
+            const requestedAt = Date.parse(card.dataset.handoffRequestedAt || '');
+            if (!Number.isFinite(requestedAt)) return;
+
+            const remainingMs = requestedAt + this.humanHandoffBadgeTtlMs - Date.now();
+            if (remainingMs <= 0) {
+              this.hideNeedsHumanBadge(card);
+              return;
+            }
+
+            this.handoffBadgeTimers.push(setTimeout(() => {
+              this.hideNeedsHumanBadge(card);
+            }, remainingMs));
+          });
         },
 
         applyLock(data = {}) {
@@ -293,6 +409,30 @@
             locked: !!data.locked,
             locked_by: data.locked_by || null,
             locked_by_me: !!data.locked_by_me,
+          };
+
+          if (data.handoff) {
+            this.applyHandoff(data.handoff);
+          }
+        },
+
+        applyHandoff(data = {}) {
+          if (typeof data.active === 'undefined' && typeof data.assigned_to === 'undefined') {
+            return;
+          }
+
+          this.handoff = {
+            active: !!data.active,
+            status: data.status || (data.active ? 'needs_human' : 'open'),
+            needs_human: !!data.needs_human,
+            bot_paused: !!data.bot_paused,
+            requested_at: data.requested_at || null,
+            message_preview: data.message_preview || null,
+            message_key: data.message_key || null,
+            assigned_to: data.assigned_to || null,
+            assigned_to_id: data.assigned_to_id || null,
+            assigned_to_me: !!data.assigned_to_me,
+            unread_count: Number.parseInt(String(data.unread_count ?? '0'), 10) || 0,
           };
         },
 
@@ -321,6 +461,11 @@
           await this.load();
           this.bindListInteractionHandlers();
           this.bindMessageInteractionHandlers();
+          window.chatListNotifications?.syncFromList(this.$refs.chatList, {
+            activeContactId: String(contactId),
+            initial: true,
+          });
+          this.scheduleNeedsHumanBadgeExpiry();
           this.$nextTick(() => this.setListHeight());
           this.resizeHandler = () => this.setListHeight();
           window.addEventListener('resize', this.resizeHandler, { passive: true });
@@ -335,6 +480,7 @@
             clearInterval(this.timer);
             clearInterval(this.listTimer);
             clearInterval(this.lockTimer);
+            this.clearNeedsHumanBadgeTimers();
             if (this.resizeHandler) {
               window.removeEventListener('resize', this.resizeHandler);
               window.removeEventListener('orientationchange', this.resizeHandler);
@@ -395,7 +541,9 @@
             }
 
             this.applyLock(data);
+            this.applyHandoff(data.handoff || {});
             this.clearError('acquire-lock');
+            await this.refreshList();
           } catch (e) {
             this.showError('Failed to lock this chat.', 'acquire-lock');
           }
@@ -421,6 +569,7 @@
               return;
             }
             this.applyLock(data);
+            this.applyHandoff(data.handoff || {});
             this.clearError('release-lock');
           } catch (e) {
             this.showError('Failed to release chat lock.', 'release-lock');
@@ -430,32 +579,83 @@
         },
 
         async manualSync() {
+          this.lastContactSyncAt = 0;
+          await this.syncRecentContactsIfDue(true);
           await this.load();
           await this.refreshList();
         },
 
-        async syncRecentContactsIfDue() {
+        async updateHandoff(action) {
+          const endpoint = {
+            takeover: `/chats/${contactId}/handoff/takeover`,
+            resume: `/chats/${contactId}/handoff/reset`,
+            resolve: `/chats/${contactId}/handoff/resolve`,
+          }[action];
+
+          if (!endpoint) return;
+
+          try {
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' }
+            });
+            let data = {};
+            try {
+              data = await res.json();
+            } catch (e) {
+              data = {};
+            }
+
+            if (!res.ok) {
+              this.showError(data.error || 'Failed to update handoff status.', 'handoff-action');
+              return;
+            }
+
+            this.applyHandoff(data.handoff || {});
+            this.clearError('handoff-action');
+            await this.refreshList();
+          } catch (e) {
+            this.showError('Failed to update handoff status.', 'handoff-action');
+          }
+        },
+
+        async syncRecentContactsIfDue(notifySuccess = false) {
           const now = Date.now();
           if (this.syncingContacts || (now - this.lastContactSyncAt) < this.syncContactsEveryMs) return;
           this.syncingContacts = true;
           try {
             const body = new URLSearchParams();
             body.set('limit', String(this.syncContactsLimit));
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 25000);
             const res = await fetch('/contacts/sync-recent', {
               method: 'POST',
               headers: {
+                'Accept': 'application/json',
                 'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'X-Requested-With': 'XMLHttpRequest',
                 'Content-Type': 'application/x-www-form-urlencoded',
               },
               body,
+              signal: controller.signal,
             });
-            if (!res.ok) {
-              this.showError('Failed to sync recent contacts.', 'sync-contacts');
+            clearTimeout(timeoutId);
+            let data = {};
+            try {
+              data = await res.json();
+            } catch (e) {
+              data = {};
+            }
+            if (!res.ok || data.success === false) {
+              this.showError(data.message || 'Failed to sync recent contacts.', 'sync-contacts');
               return;
             }
             this.clearError('sync-contacts');
+            if (notifySuccess) {
+              this.showNotice(data.message || 'Sync Inbox completed.');
+            }
           } catch (e) {
-            this.showError('Failed to sync recent contacts.', 'sync-contacts');
+            this.showError(e?.name === 'AbortError' ? 'Timeout syncing recent contacts.' : (e?.message || 'Failed to sync recent contacts.'), 'sync-contacts');
           } finally {
             this.lastContactSyncAt = Date.now();
             this.syncingContacts = false;
@@ -488,6 +688,7 @@
               return;
             }
             if (nextHtml === listEl.innerHTML) {
+              this.scheduleNeedsHumanBadgeExpiry();
               this.clearError('refresh-list');
               return;
             }
@@ -498,6 +699,10 @@
             this.$nextTick(() => {
               this.setListHeight();
               listEl.scrollTop = wasNearBottom ? listEl.scrollHeight : previousScrollTop;
+              window.chatListNotifications?.syncFromList(listEl, {
+                activeContactId: String(contactId),
+              });
+              this.scheduleNeedsHumanBadgeExpiry();
             });
             this.clearError('refresh-list');
           } catch (e) {
@@ -515,6 +720,10 @@
               method: 'POST',
               headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' }
             });
+            this.handoff = {
+              ...this.handoff,
+              unread_count: 0,
+            };
           } finally {
             this.readMarking = false;
           }
@@ -541,6 +750,8 @@
               return;
             }
             this.messages = data.messages || [];
+            this.applyHandoff(data.handoff || {});
+            this.maybeNotifyIncomingMessage(this.messages);
             this.$nextTick(() => {
               const el = this.$refs.scroll;
               if (!el) return;

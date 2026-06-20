@@ -49,6 +49,15 @@
   scrollbar-gutter: stable;
 }
 
+.chat-needs-human-badge {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.chat-needs-human-badge.is-expiring {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
 /* Keep chat layout at a deterministic viewport-based height */
 .chat-shell-height {
   height: calc(100vh - 96px);

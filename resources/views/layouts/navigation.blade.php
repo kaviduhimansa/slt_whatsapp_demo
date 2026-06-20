@@ -12,6 +12,7 @@
 
                 <!-- Navigation Links -->
                 <div class="hidden space-x-2 sm:ms-8 sm:flex">
+                    @if(Auth::user()->role !== 'superadmin')
                     <a href="{{ route('chats.index') }}"
                        class="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all
                               {{ request()->routeIs('chats.*')
@@ -32,6 +33,7 @@
                         </svg>
                         Logs
                     </a>
+                    @endif
                 </div>
             </div>
 
@@ -66,14 +68,13 @@
                         <!-- Authentication -->
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
-                            <x-dropdown-link :href="route('logout')"
-                                    onclick="event.preventDefault(); this.closest('form').submit();"
-                                    class="flex items-center gap-2 text-red-400 hover:bg-red-500/10">
+                            <button type="submit"
+                                    class="flex w-full items-center gap-2 px-4 py-2 text-start text-sm leading-5 text-red-400 hover:bg-red-500/10 focus:outline-none focus:bg-white/5 transition duration-150 ease-in-out">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                                 </svg>
                                 {{ __('Log Out') }}
-                            </x-dropdown-link>
+                            </button>
                         </form>
                     </x-slot>
                 </x-dropdown>
@@ -94,6 +95,7 @@
     <!-- Responsive Navigation Menu -->
     <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden bg-slt-ink border-t border-white/10">
         <div class="pt-2 pb-3 space-y-1 px-4">
+            @if(Auth::user()->role !== 'superadmin')
             <a href="{{ route('chats.index') }}"
                class="flex items-center gap-2 px-3 py-2 rounded-lg text-base font-medium transition-all
                       {{ request()->routeIs('chats.*') ? 'bg-slt-primary text-white' : 'text-slt-muted hover:text-white hover:bg-white/5' }}">
@@ -110,6 +112,7 @@
                 </svg>
                 Logs
             </a>
+            @endif
         </div>
 
         <!-- Responsive Settings Options -->

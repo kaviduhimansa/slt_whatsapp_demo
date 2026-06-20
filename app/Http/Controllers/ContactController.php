@@ -3,8 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contact;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 
 class ContactController extends Controller
 {
@@ -59,24 +60,70 @@ class ContactController extends Controller
         $limit = max(1, min($maxLimit, $limit));
 
         try {
-            Artisan::call('whatsapp:sync-contacts', [
+            $exitCode = Artisan::call('whatsapp:sync-contacts', [
                 '--limit' => $limit,
             ]);
         } catch (\Throwable $e) {
+            Log::error('Recent contacts sync failed', [
+                'limit' => $limit,
+                'user_id' => auth()->id(),
+                'exception_class' => get_class($e),
+                'exception_message' => $e->getMessage(),
+            ]);
+
+            if ($this->wantsJson($request)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Recent contacts sync failed. Check Laravel logs for details.',
+                ], 500);
+            }
+
             return redirect()
                 ->route('chats.index')
                 ->with('error', 'Recent contacts sync failed. Please try again in a moment.');
         }
 
-        $output = strtolower(trim(Artisan::output()));
-        if (str_contains($output, 'skipped')) {
+        $output = trim(Artisan::output());
+        Log::info('Recent contacts sync completed', [
+            'limit' => $limit,
+            'user_id' => auth()->id(),
+            'exit_code' => $exitCode,
+            'output' => $output,
+        ]);
+
+        $outputLower = strtolower($output);
+        $hadApiIssue = str_contains($outputLower, 'skipped') || str_contains($outputLower, 'failed');
+        $message = $hadApiIssue
+            ? 'Sync Inbox checked for recent contacts. No new chats were returned.'
+            : ($output !== '' ? $output : "Synced last {$limit} recent mobiles.");
+
+        if ($this->wantsJson($request)) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'limit' => $limit,
+                    'output' => $output,
+                    'api_issue_logged' => $hadApiIssue,
+                ],
+            ]);
+        }
+
+        if ($hadApiIssue) {
             return redirect()
                 ->route('chats.index')
-                ->with('error', 'Recent contacts sync is currently unavailable.');
+                ->with('status', 'Sync Inbox checked for recent contacts.');
         }
 
         return redirect()
             ->route('chats.index')
-            ->with('status', "Synced last {$limit} recent mobiles.");
+            ->with('status', $message);
+    }
+
+    private function wantsJson(Request $request): bool
+    {
+        return $request->expectsJson()
+            || str_contains((string) $request->header('Accept'), 'application/json')
+            || $request->ajax();
     }
 }

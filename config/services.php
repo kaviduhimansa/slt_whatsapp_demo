@@ -47,6 +47,7 @@ return [
         'phone_number_id' => env('SLT_PHONE_NUMBER_ID'),
         // If you already have a Bearer token, set this to skip login.php.
         'bearer_token' => env('SLT_API_BEARER_TOKEN'),
+        'verify_ssl' => env('SLT_API_VERIFY_SSL', true),
     ],
 
 ];

@@ -3,14 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contact;
+use App\Services\ChatConversationService;
 use Illuminate\Support\Facades\DB;
 
 class ChatLockController extends Controller
 {
-    public function status(Contact $contact)
+    public function status(Contact $contact, ChatConversationService $conversation)
     {
         $current = $this->loadFreshContactWithLockCleanup($contact->id);
-        return response()->json($this->lockPayload($current));
+        return response()->json($this->lockPayload($current, $conversation));
     }
 
     /**
@@ -19,7 +20,7 @@ class ChatLockController extends Controller
      * - If locked by me: refreshes timestamp
      * - If locked by another (and not stale): returns locked info
      */
-    public function acquire(Contact $contact)
+    public function acquire(Contact $contact, ChatConversationService $conversation)
     {
         $userId = auth()->id();
 
@@ -35,13 +36,19 @@ class ChatLockController extends Controller
 
             $c->locked_by_user_id = $userId;
             $c->locked_at = now();
+            $c->human_handoff_active = true;
+            $c->human_handoff_status = 'assigned_to_agent';
+            $c->bot_paused = true;
+            $c->human_handoff_requested_at = $c->human_handoff_requested_at ?? now();
+            $c->human_handoff_assigned_user_id = $userId;
+            $c->human_handoff_assigned_at = now();
             $c->save();
-            $c->load('lockedBy');
+            $c->load(['lockedBy', 'humanHandoffAssignedTo']);
 
             return ['state' => 'acquired', 'contact' => $c];
         });
 
-        $payload = $this->lockPayload($result['contact']);
+        $payload = $this->lockPayload($result['contact'], $conversation);
         if ($result['state'] === 'blocked') {
             return response()->json(array_merge($payload, [
                 'ok' => false,
@@ -52,7 +59,7 @@ class ChatLockController extends Controller
         return response()->json(array_merge($payload, ['ok' => true]));
     }
 
-    public function release(Contact $contact)
+    public function release(Contact $contact, ChatConversationService $conversation)
     {
         $userId = auth()->id();
 
@@ -79,7 +86,7 @@ class ChatLockController extends Controller
             return ['state' => 'released', 'contact' => $c];
         });
 
-        $payload = $this->lockPayload($result['contact']);
+        $payload = $this->lockPayload($result['contact'], $conversation);
         if ($result['state'] === 'blocked') {
             return response()->json(array_merge($payload, [
                 'ok' => false,
@@ -113,9 +120,10 @@ class ChatLockController extends Controller
         }
     }
 
-    private function lockPayload(Contact $contact): array
+    private function lockPayload(Contact $contact, ChatConversationService $conversation): array
     {
         $lockedById = $contact->locked_by_user_id;
+        $contact->loadMissing('humanHandoffAssignedTo');
 
         return [
             'locked' => (bool) $lockedById,
@@ -124,6 +132,7 @@ class ChatLockController extends Controller
             'locked_by_me' => $lockedById ? (int) $lockedById === (int) auth()->id() : false,
             'ttl_seconds' => (int) config('chat.lock_ttl_seconds', 120),
             'locked_at' => optional($contact->locked_at)->toIso8601String(),
+            'handoff' => $conversation->handoffPayload($contact),
         ];
     }
 }

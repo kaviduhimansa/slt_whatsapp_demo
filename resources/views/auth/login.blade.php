@@ -53,5 +53,9 @@
                 <a href="{{ route('register') }}" class="text-slt-info hover:text-slt-info/80">Sign up</a>
             </p>
         @endif
+
+        <p class="text-center text-sm text-slt-muted">
+            <a href="{{ route('superadmin.login') }}" class="text-slt-info hover:text-slt-info/80">Super Admin Login</a>
+        </p>
     </form>
 </x-guest-layout>
