@@ -84,6 +84,14 @@
             </div>
 
             <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+              <!-- Start Video Call Button -->
+              <a href="{{ route('video.start', $contact->id) }}" class="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-sm flex items-center gap-2 whitespace-nowrap transition-all font-medium shadow-lg hover:shadow-xl">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Video Call
+              </a>
+
               <!-- Save Contact Button -->
               <button @click="openSaveContact()" class="px-3 py-2 rounded-xl border border-slt-accent text-slt-accent hover:bg-slt-accent/10 text-sm flex items-center gap-2 whitespace-nowrap transition-all">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

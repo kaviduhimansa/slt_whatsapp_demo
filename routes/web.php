@@ -6,6 +6,7 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ChatLockController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\LogController;
+use App\Http\Controllers\VideoController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -54,6 +55,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Logs page
     Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
+
+    // Video calls
+    Route::get('/video', [VideoController::class, 'index'])->name('video.index');
+    Route::get('/video/{contact}', [VideoController::class, 'start'])->name('video.start');
+    Route::post('/video/end/{room}', [VideoController::class, 'end'])->name('video.end');
+
+    // Meeting route
+    Route::get('/meeting', function () {
+        return view('meeting');
+    });
 });
 
 /*

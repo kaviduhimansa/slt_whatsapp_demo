@@ -119,6 +119,11 @@ class Contact extends Model
         return $this->hasMany(Message::class);
     }
 
+    public function meetings(): HasMany
+    {
+        return $this->hasMany(Meeting::class);
+    }
+
     public function lastMessage()
     {
         return $this->hasOne(Message::class)->latestOfMany('sent_at');
