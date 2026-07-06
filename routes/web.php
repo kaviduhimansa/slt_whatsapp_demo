@@ -61,10 +61,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/video/{contact}', [VideoController::class, 'start'])->name('video.start');
     Route::post('/video/end/{room}', [VideoController::class, 'end'])->name('video.end');
 
-    // Meeting route
-    Route::get('/meeting', function () {
-        return view('meeting');
-    });
+    // Test Meeting 
+    Route::get('/videos/test', [VideoController::class, 'test'])
+    ->name('video.test');
 });
 
 /*

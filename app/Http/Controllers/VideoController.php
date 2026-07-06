@@ -46,4 +46,31 @@ class VideoController extends Controller
 
         return redirect()->route('chats.index');
     }
+
+        public function test()
+    {
+        // Create or get a dummy contact
+        $contact = Contact::first();
+
+        if (!$contact) {
+            $contact = Contact::create([
+                'name' => 'Test User',
+                'mobile' => '0000000000'
+            ]);
+        }
+
+        // Generate unique room name
+        $roomName = 'test_' . Str::random(6);
+
+        // Store meeting in database
+        Meeting::create([
+            'contact_id' => $contact->id,
+            'started_by' => Auth::id(),
+            'room_name' => $roomName,
+            'started_at' => now(),
+            'status' => 'active'
+        ]);
+
+        return view('video.room', compact('roomName', 'contact'));
+    }
 }
